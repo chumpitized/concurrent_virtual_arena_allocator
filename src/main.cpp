@@ -26,6 +26,7 @@ struct Arena {
 void arena_init(Arena *a, size_t length) {
 	a->buffer = (unsigned char *)VirtualAlloc(NULL, length, MEM_RESERVE, PAGE_READWRITE);
 	a->length = length;
+	a->committed.store(0);
 	a->curr_offset.store(0);
 }
 
@@ -60,7 +61,7 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 
 		VirtualAlloc(&a->buffer[committed], to_commit, MEM_COMMIT, PAGE_READWRITE);
 
-		if (a->committed.compare_exchange_weak(committed, to_commit)) {
+		if (a->committed.compare_exchange_weak(committed, committed + to_commit)) {
 			break;
 		}
 	}
