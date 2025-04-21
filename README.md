@@ -1,7 +1,7 @@
 # Concurrent Virtual Arena Allocator
-This arena allocator pretty closely matches the behavior of my previous [concurrent allocator](https://github.com/chumpitized/concurrent_arena_allocator). That is, I use `fetch_add` as a lock-free way to increment the memory offset in the arena. This implementation goes one step further by incorporating `VirtualAlloc` to reserve and commit memory inside the arena.
+This arena allocator pretty closely matches the behavior of my previous [concurrent allocator](https://github.com/chumpitized/concurrent_arena_allocator). That is, I use `fetch_add` as a lock-free way to increment the memory offset in the arena. This new implementation goes a step further by incorporating `VirtualAlloc` to reserve and commit memory inside the arena.
 
-Since this is a concurrent allocator, I needed to find a way to update the memory offset _and_ commit pages without encountering race conditions. Like I said, the offset was handled with a simple `fetch_add` instruction, while the `VirtualAlloc` calls used a compare-and-swap loop.
+Since this is a concurrent allocator, I needed to find a way to update the memory offset _and_ commit pages without encountering race conditions. Like I said, the offset is handled with a simple `fetch_add` instruction, while the `VirtualAlloc` call uses a compare-and-swap loop.
 
 Here is one way of handling allocations:
 
@@ -31,9 +31,9 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 }
 ```
 
-This approach looks very simple to the one I used, but it behaves a little differently. Everything relating to `a->curr_offset` is identical, as is the `.load()` of `a->committed` and the use of a CAS loop. The difference lies in _when_ we commit our memory inside that loop. 
+This approach looks very similar to the one I used, but it behaves a little differently. Everything relating to `a->curr_offset` is identical, as is the `.load()` of `a->committed` and the use of a CAS loop. The difference lies in _when_ we commit our memory inside that loop. 
 
-In the code above, we wait on a successful update to `a->committed` before calling `VirtualAlloc` to commit new pages. This makes a sort of sense: You want whatever thread won the `compare_exchange_weak` contest to update `a->committed` and commit the correct number of pages. The only issue is that, once you update `a->committed`, any thread is free to allocate memory up to that offset regardless of that memory's status. This means an interrupt could strike at the worst moment — right when `a->committed` changes but before `VirtualAlloc` commits — and allow allocations to uncommitted memory. (This will cause an access violation and kill your process.) 
+In the code above, we wait on a successful update to `a->committed` before calling `VirtualAlloc` to commit new pages. This makes a sort of sense: You want whatever thread won the `compare_exchange_weak` contest to update `a->committed` and commit the correct number of pages. The only issue is that, once you update `a->committed`, any thread is free to allocate memory up to that offset regardless of that memory's status. This means an interrupt could strike at the worst moment — right when `a->committed` changes but before `VirtualAlloc` commits — and permit allocations to uncommitted memory. (This will cause an access violation and kill your process.) 
 
 It might be a fun experiment to think about how you would solve this problem.
 
@@ -66,3 +66,5 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 	return &a->buffer[offset];
 }
 ```
+
+Now we risk calling `VirtualAlloc` redundantly across threads, but these calls will not fail (so there's no reason to call `VirtualFree`) and their frequency can be reduced by increasing the number of pages commited.
