@@ -31,13 +31,13 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 }
 ```
 
-This approach looks very similar to the one I used, but it behaves a little differently. Everything relating to `a->curr_offset` is identical, as is the `.load()` of `a->committed` and the use of a CAS loop. The difference lies in _when_ we commit our memory inside that loop. 
+This approach looks very similar to the one I implemented, but it behaves a bit differently. Everything related to `a->curr_offset` is identical, as is the `.load()` of `a->committed` and the use of a CAS loop. The difference lies in the timing of the memory commitment. 
 
-In the code above, we wait on a successful update to `a->committed` before calling `VirtualAlloc` to commit new pages. This makes a sort of sense: You want whatever thread won the `compare_exchange_weak` contest to update `a->committed` and commit the correct number of pages. The only issue is that, once you update `a->committed`, any thread is free to allocate memory up to that offset regardless of that memory's status. This means an interrupt could strike at the worst moment — right when `a->committed` changes but before `VirtualAlloc` commits — and permit allocations to uncommitted memory. (This will cause an access violation and kill your process.) 
+In the example above, I wait on a successful update to `a->committed` before calling `VirtualAlloc` to commit new pages. This makes a sort of sense: I want whatever thread won the `compare_exchange_weak` contest to update `a->committed` and commit the correct number of pages. The only issue is that, once `a->committed` has been updated, any thread is free to allocate up to that offset regardless of the memory's status. This means an interrupt could strike at the worst moment — after `a->committed` changes but before `VirtualAlloc` commits — and permit allocations to uncommitted memory. (This will cause an access violation and kill your process.) 
 
 It might be a fun experiment to think about how you would solve this problem.
 
-Anyway, you have to call `VirtualAlloc` before you update `a->committed` or you're bound to encounter the aforementioned race condition. You simply can't update `a->committed` before you've committed enough memory. With this in mind, the code above transforms into:
+My solution was to call `VirtualAlloc` before updating `a->committed`, which should avoid the aforementioned race condition.
 
 ```c++
 void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
@@ -67,4 +67,4 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 }
 ```
 
-Now we risk calling `VirtualAlloc` redundantly across threads, but these calls will not fail (so there's no reason to call `VirtualFree`) and their frequency can be reduced by increasing the number of committed pages.
+Now I risk calling `VirtualAlloc` redundantly across threads, but these calls will not fail (so there's no reason to call `VirtualFree`) and their frequency can be reduced by increasing the size of my commits.
