@@ -67,4 +67,4 @@ void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 }
 ```
 
-Now we risk calling `VirtualAlloc` redundantly across threads, but these calls will not fail (so there's no reason to call `VirtualFree`) and their frequency can be reduced by increasing the number of pages commited.
+Now we risk calling `VirtualAlloc` redundantly across threads, but these calls will not fail (so there's no reason to call `VirtualFree`) and their frequency can be reduced by increasing the number of committed pages.
