@@ -46,7 +46,7 @@ inline size_t commit_size(size_t committed, size_t allocated) {
 void *arena_concurrent_alloc(Arena *a, size_t size, size_t align) {
 	size_t aligned_size = align_forward(size, align);
 	size_t offset = a->curr_offset.fetch_add(aligned_size);
-	size_t allocated = offset + size;
+	size_t allocated = offset + aligned_size;
 	
 	if (allocated > a->length) {
 		a->curr_offset.fetch_sub(aligned_size);
